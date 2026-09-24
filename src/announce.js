@@ -51,3 +51,15 @@ export async function announceGoLive(channel, stream) {
   const embed = buildLiveEmbed(stream);
   await channel.send({ embeds: [embed] });
 }
+
+/**
+ * Short plain offline notice.
+ * @param {import('discord.js').TextChannel} channel
+ * @param {{ login: string, displayName?: string }} info
+ */
+export async function announceGoneOffline(channel, info) {
+  const login = info.login;
+  const display = info.displayName || login;
+  await channel.send(`**${display}** ist offline gegangen.`);
+}
+

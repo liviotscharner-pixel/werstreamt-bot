@@ -7,7 +7,7 @@ import {
 } from './config.js';
 import { loadLiveState, saveLiveState } from './state.js';
 import { fetchLiveStreams } from './twitch.js';
-import { announceGoLive } from './announce.js';
+import { announceGoLive, announceGoneOffline } from './announce.js';
 
 if (!DISCORD_TOKEN) {
   console.error(
@@ -56,11 +56,22 @@ async function pollOnce() {
           id: stream.id,
           title: stream.title || '',
           game: stream.game_name || '',
+          userName: stream.user_name || login,
           announcedAt: new Date().toISOString(),
         };
         dirty = true;
       } else if (!stream && wasLive) {
         console.log(`[poll] OFFLINE: ${login}`);
+        if (announceChannel) {
+          try {
+            await announceGoneOffline(announceChannel, {
+              login,
+              displayName: prev[login]?.userName || login,
+            });
+          } catch (err) {
+            console.error(`[announce] Offline-Fehler für ${login}:`, err.message);
+          }
+        }
         delete next[login];
         dirty = true;
       } else if (stream && wasLive) {
