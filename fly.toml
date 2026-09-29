@@ -1,0 +1,30 @@
+# Fly.io — WerStreamt? Discord bot (long-running worker, no HTTP)
+# App name is set at `fly apps create` / first deploy.
+
+app = "werstreamt-bot"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Worker process: Discord bot + Twitch poll loop (no public HTTP service)
+[processes]
+  app = "npm start"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Optional: persist live-state.json across deploys (create with:
+#   fly volumes create werstreamt_data --region fra --size 1
+# then uncomment below)
+# [mounts]
+#   source = "werstreamt_data"
+#   destination = "/app/data"
+
+[env]
+  NODE_ENV = "production"
+  # Secrets (set via `fly secrets set`, not here):
+  #   DISCORD_TOKEN, DISCORD_CHANNEL_ID, POLL_INTERVAL_MS

@@ -55,12 +55,41 @@ npm start              # Produktion
 npm run dev            # mit --watch
 ```
 
-## Deploy (Railway)
+## Deploy (Fly.io) — empfohlen
+
+Long-running Worker (kein HTTP nötig). Config: `fly.toml` (Region `fra`, shared-cpu-1x / 256 MB).
+
+```bash
+# einmalig
+fly auth login
+fly apps create werstreamt-bot   # falls Name frei
+fly secrets set DISCORD_TOKEN=... \
+  DISCORD_CHANNEL_ID=1552036391167336458 \
+  POLL_INTERVAL_MS=60000
+fly deploy                       # aus Repo-Root
+
+# Logs / Status
+fly status
+fly logs
+fly machines list
+```
+
+Optional Volume für persistentes `live-state.json`:
+
+```bash
+fly volumes create werstreamt_data --region fra --size 1
+# dann in fly.toml den [mounts]-Block einkommentieren und erneut deployen
+```
+
+Dashboard: https://fly.io/apps/werstreamt-bot
+
+## Deploy (Railway) — Legacy
 
 - `Dockerfile` (node:20-alpine) und `railway.toml` sind vorhanden.
 - In Railway nur setzen: `DISCORD_TOKEN`, `DISCORD_CHANNEL_ID`, optional `POLL_INTERVAL_MS`, `NODE_ENV=production`.
 - Optional Volume für `/app/data`, damit `live-state.json` über Redeploys erhalten bleibt.
 - `streamers.json` / `extra-live-channels.json` vor dem Deploy befüllen oder später per Redeploy aktualisieren.
+- Railway-Projekt nicht löschen, solange Fly nicht live und bestätigt ist.
 
 ## Projektstruktur
 
@@ -76,6 +105,7 @@ werstreamt-bot/
 ├── extra-live-channels.json
 ├── data/             # runtime, gitignored
 ├── Dockerfile
+├── fly.toml
 ├── railway.toml
 └── package.json
 ```
