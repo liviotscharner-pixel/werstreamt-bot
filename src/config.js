@@ -50,6 +50,10 @@ export const DISCORD_CHANNEL_ID =
 export const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || 60_000);
 
 export const STREAMERS_PATH = path.join(ROOT, 'streamers.json');
+export const EXTRA_LIVE_CHANNELS_PATH = path.join(
+  ROOT,
+  'extra-live-channels.json',
+);
 export const LIVE_STATE_PATH = path.join(ROOT, 'data', 'live-state.json');
 
 export function loadStreamers() {
@@ -67,4 +71,40 @@ export function loadStreamers() {
     console.warn('[config] streamers.json nicht lesbar:', err.message);
     return [];
   }
+}
+
+/**
+ * Map Twitch login → extra Discord channel IDs for go-live only.
+ * @returns {Map<string, string[]>}
+ */
+export function loadExtraLiveChannels() {
+  /** @type {Map<string, string[]>} */
+  const map = new Map();
+  try {
+    if (!fs.existsSync(EXTRA_LIVE_CHANNELS_PATH)) {
+      return map;
+    }
+    const raw = fs.readFileSync(EXTRA_LIVE_CHANNELS_PATH, 'utf8');
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      console.warn(
+        '[config] extra-live-channels.json ist kein Objekt – verwende {}',
+      );
+      return map;
+    }
+    for (const [login, channels] of Object.entries(obj)) {
+      const key = String(login).trim().toLowerCase();
+      if (!key) continue;
+      const ids = (Array.isArray(channels) ? channels : [channels])
+        .map((id) => String(id).trim())
+        .filter(Boolean);
+      if (ids.length) map.set(key, ids);
+    }
+  } catch (err) {
+    console.warn(
+      '[config] extra-live-channels.json nicht lesbar:',
+      err.message,
+    );
+  }
+  return map;
 }

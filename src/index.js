@@ -4,6 +4,7 @@ import {
   DISCORD_CHANNEL_ID,
   POLL_INTERVAL_MS,
   loadStreamers,
+  loadExtraLiveChannels,
 } from './config.js';
 import { loadLiveState, saveLiveState } from './state.js';
 import { fetchLiveStreams } from './twitch.js';
@@ -20,9 +21,26 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 /** @type {import('discord.js').TextBasedChannel | null} */
 let announceChannel = null;
+
+/** login → cached Discord channels for extra go-live announcements */
+/** @type {Map<string, import('discord.js').TextBasedChannel[]>} */
+const extraLiveChannelsByLogin = new Map();
+
 let pollTimer = null;
 let polling = false;
 let started = false;
+
+function channelLabel(channel) {
+  const name =
+    channel && 'name' in channel && channel.name ? channel.name : channel?.id;
+  return name ? `#${name}` : '(unbekannt)';
+}
+
+function channelTypeLabel(channel) {
+  if (channel.type === ChannelType.GuildText) return 'Text';
+  if (channel.type === ChannelType.GuildAnnouncement) return 'Announcement';
+  return `Typ ${channel.type}`;
+}
 
 async function pollOnce() {
   if (polling) return;
@@ -50,6 +68,20 @@ async function pollOnce() {
             await announceGoLive(announceChannel, stream);
           } catch (err) {
             console.error(`[announce] Fehler für ${login}:`, err.message);
+          }
+        }
+        const extras = extraLiveChannelsByLogin.get(login) || [];
+        for (const extraChannel of extras) {
+          try {
+            console.log(
+              `[announce] Extra-Kanal für ${login}: ${channelLabel(extraChannel)} (${extraChannel.id})`,
+            );
+            await announceGoLive(extraChannel, stream);
+          } catch (err) {
+            console.error(
+              `[announce] Extra-Kanal-Fehler für ${login} → ${extraChannel.id}:`,
+              err.message,
+            );
           }
         }
         next[login] = {
@@ -111,35 +143,73 @@ function startPolling() {
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
 }
 
+async function fetchAndLogChannel(channelId, label) {
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel) {
+      console.error(`[discord] ${label} ${channelId} nicht gefunden`);
+      return null;
+    }
+    console.log(
+      `[discord] ${label} erreichbar: ${channelLabel(channel)} (${channel.id}, ${channelTypeLabel(channel)})`,
+    );
+    return channel;
+  } catch (err) {
+    console.error(
+      `[discord] ${label} ${channelId} nicht erreichbar:`,
+      err.message,
+    );
+    return null;
+  }
+}
+
 async function onReady() {
   if (started) return;
   started = true;
 
   console.log(`[discord] Eingeloggt als ${client.user.tag}`);
 
-  try {
-    const channel = await client.channels.fetch(DISCORD_CHANNEL_ID);
-    if (!channel) {
-      console.error(`[discord] Kanal ${DISCORD_CHANNEL_ID} nicht gefunden`);
-    } else {
-      announceChannel = channel;
-      const name =
-        'name' in channel && channel.name ? channel.name : channel.id;
-      const typeLabel =
-        channel.type === ChannelType.GuildText
-          ? 'Text'
-          : channel.type === ChannelType.GuildAnnouncement
-            ? 'Announcement'
-            : `Typ ${channel.type}`;
+  announceChannel = await fetchAndLogChannel(
+    DISCORD_CHANNEL_ID,
+    'Ankündigungs-Kanal',
+  );
+
+  const extraMap = loadExtraLiveChannels();
+  extraLiveChannelsByLogin.clear();
+  /** @type {Set<string>} */
+  const seenIds = new Set([DISCORD_CHANNEL_ID]);
+  /** @type {Map<string, import('discord.js').TextBasedChannel>} */
+  const channelCache = new Map();
+
+  for (const [login, channelIds] of extraMap.entries()) {
+    /** @type {import('discord.js').TextBasedChannel[]} */
+    const channels = [];
+    for (const id of channelIds) {
+      if (id === DISCORD_CHANNEL_ID) {
+        console.warn(
+          `[discord] Extra-Kanal ${id} für ${login} ist der Default-Kanal – übersprungen`,
+        );
+        continue;
+      }
+      let channel = channelCache.get(id);
+      if (!channel && !seenIds.has(id)) {
+        seenIds.add(id);
+        channel = await fetchAndLogChannel(
+          id,
+          `Extra-Live-Kanal (${login})`,
+        );
+        if (channel) channelCache.set(id, channel);
+      } else if (!channel) {
+        channel = channelCache.get(id) || null;
+      }
+      if (channel) channels.push(channel);
+    }
+    if (channels.length) {
+      extraLiveChannelsByLogin.set(login, channels);
       console.log(
-        `[discord] Ankündigungs-Kanal erreichbar: #${name} (${channel.id}, ${typeLabel})`,
+        `[discord] Extra-Live-Kanäle für ${login}: ${channels.map((c) => c.id).join(', ')}`,
       );
     }
-  } catch (err) {
-    console.error(
-      `[discord] Kanal ${DISCORD_CHANNEL_ID} nicht erreichbar:`,
-      err.message,
-    );
   }
 
   startPolling();
